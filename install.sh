@@ -123,7 +123,8 @@ kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnLeft X
 kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnRight AI
 
 if [[ $SET_FONT == 1 ]]; then
-  if fc-list 2>/dev/null | grep -qi 'ChicagoFLF'; then
+  # (no "fc-list | grep -q": with pipefail, grep's early exit makes the pipe fail)
+  if [[ -n "$(fc-list 'ChicagoFLF' 2>/dev/null)" ]]; then
     echo "→ Title font: ChicagoFLF $FONT_PT pt"
     kwriteconfig6 --file kdeglobals --group WM --key activeFont "ChicagoFLF,$FONT_PT,-1,5,400,0,0,0,0,0,0,0,0,0,0,1,Regular"
   else
