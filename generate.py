@@ -2,7 +2,8 @@
 """Generate the OS7 Pinstripe theme for KDE Plasma 6.
 
 Produces, under ./build:
-  aurorae/OS7Pinstripe{,-2x,-3x}   window decorations (one per integer scale)
+  kwin-decorations/os7pinstripe{,-2x,-3x}  QML window decorations (default engine)
+  aurorae/OS7Pinstripe{,-2x,-3x}           SVG window decorations (fallback engine)
   color-schemes/OS7Pinstripe.colors
   desktoptheme/OS7Pinstripe        Plasma Style (panel, popups, tooltips)
   wallpapers/*.png                 tiled desktop patterns
@@ -10,7 +11,7 @@ Produces, under ./build:
 Usage:  python3 generate.py [--scale N]
 
 --scale (1-3) sets the size of the Plasma Style and wallpaper patterns.
-The three window decorations are always generated. Scales are integers so
+The window decorations are always generated in all three sizes. Scales are integers so
 1-px lines stay crisp.
 
 Only the Python standard library is needed.
@@ -24,10 +25,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "build"
+QML_SRC = ROOT / "src" / "decoration"
 
 THEME_ID = "OS7Pinstripe"
 THEME_NAME = "OS7 Pinstripe"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 S = 1  # integer scale factor, set per build step
 
@@ -202,7 +204,7 @@ def aurorae_id(scale):
 
 
 def aurorae_meta(scale):
-    label = THEME_NAME if scale == 1 else f"{THEME_NAME} ×{scale}"
+    label = f"{THEME_NAME} SVG" if scale == 1 else f"{THEME_NAME} SVG ×{scale}"
     return f"""[Desktop Entry]
 Name={label}
 Comment=Black-and-white pinstriped window decoration inspired by early-1990s desktops
@@ -227,6 +229,35 @@ def build_aurorae():
     # Aurorae looks for "<theme id>rc"
     (d / f"{aurorae_id(S)}rc").write_text(aurorae_rc())
     (d / "metadata.desktop").write_text(aurorae_meta(S))
+
+
+# ---------------------------------------------------------------------------
+# QML window decoration (Aurorae QML engine): the title plate fits the text
+# ---------------------------------------------------------------------------
+def qml_id(scale):
+    return "os7pinstripe" if scale == 1 else f"os7pinstripe-{scale}x"
+
+
+def build_qml_decoration():
+    d = OUT / "kwin-decorations" / qml_id(S)
+    ui = d / "contents" / "ui"
+    ui.mkdir(parents=True)
+    main = (QML_SRC / "main.qml").read_text().replace("@UNIT@", str(S))
+    (ui / "main.qml").write_text(main)
+    shutil.copy(QML_SRC / "PinstripeButton.qml", ui / "PinstripeButton.qml")
+    label = THEME_NAME if S == 1 else f"{THEME_NAME} ×{S}"
+    meta = {
+        "KPackageStructure": "KWin/Decoration",
+        "KPlugin": {
+            "Id": qml_id(S),
+            "Name": label,
+            "Description": "Black-and-white pinstriped window decoration inspired by early-1990s desktops",
+            "Authors": [{"Name": "OS7 Pinstripe contributors"}],
+            "License": "GPL-3.0",
+            "Version": VERSION,
+        },
+    }
+    (d / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +434,7 @@ if __name__ == "__main__":
     if OUT.exists():
         shutil.rmtree(OUT)
     for S in (1, 2, 3):
+        build_qml_decoration()
         build_aurorae()
     S = scale
     build_colors()

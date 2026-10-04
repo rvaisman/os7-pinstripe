@@ -46,7 +46,8 @@ else
 fi
 
 echo "→ Removing theme files"
-rm -rf "$DATA/aurorae/themes/$ID" "$DATA/aurorae/themes/$ID-"* \
+rm -rf "$DATA/kwin/decorations/os7pinstripe" "$DATA/kwin/decorations/os7pinstripe-"* \
+       "$DATA/aurorae/themes/$ID" "$DATA/aurorae/themes/$ID-"* \
        "$DATA/plasma/desktoptheme/$ID" "$DATA/wallpapers/$ID" "$DATA/os7-pinstripe"
 rm -f "$DATA/color-schemes/$ID.colors"
 echo "Done."

@@ -10,6 +10,7 @@ BACKUP="$DATA/os7-pinstripe/backup.env"
 ID=OS7Pinstripe
 
 SCALE=2
+ENGINE=qml
 WALLPAPER=gray
 PANEL_TOP=0
 COPY_ONLY=0
@@ -20,6 +21,8 @@ usage() {
 Usage: ./install.sh [options]
 
   --scale 1|2|3        Title bar size: 1 = 19 px (original), 2 = 38 px (default), 3 = 57 px
+  --engine qml|svg     Decoration engine: qml (default; title plate fits the text)
+                       or svg (simpler, title can run over the stripes)
   --wallpaper NAME     bw | gray (default) | violet | none
   --panel-top          Move your panel(s) to the top edge, like a menu bar
   --no-font            Do not change the window title font
@@ -31,6 +34,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --scale) SCALE="${2:-}"; shift ;;
+    --engine) ENGINE="${2:-}"; shift ;;
     --wallpaper) WALLPAPER="${2:-}"; shift ;;
     --panel-top) PANEL_TOP=1 ;;
     --no-font) SET_FONT=0 ;;
@@ -43,7 +47,21 @@ done
 
 case "$SCALE" in 1) FONT_PT=13 ;; 2) FONT_PT=18 ;; 3) FONT_PT=26 ;; *) echo "--scale must be 1, 2 or 3"; exit 1 ;; esac
 case "$WALLPAPER" in bw|gray|violet|none) ;; *) echo "--wallpaper must be bw, gray, violet or none"; exit 1 ;; esac
-DECO="$ID"; [[ $SCALE != 1 ]] && DECO="$ID-${SCALE}x"
+case "$ENGINE" in qml|svg) ;; *) echo "--engine must be qml or svg"; exit 1 ;; esac
+SUFFIX=""; [[ $SCALE != 1 ]] && SUFFIX="-${SCALE}x"
+
+# Locate the Aurorae plugins (QML themes need the classic one, org.kde.kwin.aurorae)
+find_plugin() {
+  local d
+  for d in /usr/lib64 /usr/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu; do
+    [[ -e "$d/qt6/plugins/org.kde.kdecoration3/$1.so" ]] && return 0
+  done
+  return 1
+}
+if [[ $ENGINE == qml ]] && ! find_plugin org.kde.kwin.aurorae; then
+  echo "  (Aurorae QML engine not found: falling back to --engine svg)"
+  ENGINE=svg
+fi
 
 for cmd in python3 kwriteconfig6 kreadconfig6 dbus-send plasma-apply-colorscheme plasma-apply-desktoptheme; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd (is this a KDE Plasma 6 session?)"; exit 1; }
@@ -57,8 +75,10 @@ plasma_js() {
 }
 
 echo "→ Copying files to $DATA"
-mkdir -p "$DATA/aurorae/themes" "$DATA/color-schemes" "$DATA/plasma/desktoptheme" "$DATA/wallpapers/$ID"
-rm -rf "$DATA/aurorae/themes/$ID" "$DATA/aurorae/themes/$ID-"* "$DATA/plasma/desktoptheme/$ID"
+mkdir -p "$DATA/kwin/decorations" "$DATA/aurorae/themes" "$DATA/color-schemes" "$DATA/plasma/desktoptheme" "$DATA/wallpapers/$ID"
+rm -rf "$DATA/kwin/decorations/os7pinstripe" "$DATA/kwin/decorations/os7pinstripe-"* \
+       "$DATA/aurorae/themes/$ID" "$DATA/aurorae/themes/$ID-"* "$DATA/plasma/desktoptheme/$ID"
+cp -r "$BUILD/kwin-decorations/"os7pinstripe* "$DATA/kwin/decorations/"
 cp -r "$BUILD/aurorae/$ID"* "$DATA/aurorae/themes/"
 cp "$BUILD/color-schemes/$ID.colors" "$DATA/color-schemes/"
 cp -r "$BUILD/desktoptheme/$ID" "$DATA/plasma/desktoptheme/"
@@ -88,13 +108,17 @@ if [[ ! -f "$BACKUP" ]]; then
   } > "$BACKUP"
 fi
 
-echo "→ Window decoration: $DECO"
-LIB=org.kde.kwin.aurorae
-for d in /usr/lib64 /usr/lib /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu; do
-  [[ -e "$d/qt6/plugins/org.kde.kdecoration3/org.kde.kwin.aurorae.v2.so" ]] && LIB=org.kde.kwin.aurorae.v2
-done
+if [[ $ENGINE == qml ]]; then
+  LIB=org.kde.kwin.aurorae
+  THEME="os7pinstripe$SUFFIX"
+else
+  LIB=org.kde.kwin.aurorae
+  find_plugin org.kde.kwin.aurorae.v2 && LIB=org.kde.kwin.aurorae.v2
+  THEME="__aurorae__svg__$ID$SUFFIX"
+fi
+echo "→ Window decoration: $THEME ($ENGINE engine)"
 kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key library "$LIB"
-kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key theme "__aurorae__svg__$DECO"
+kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key theme "$THEME"
 kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnLeft X
 kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key ButtonsOnRight AI
 

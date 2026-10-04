@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Render README preview images from the generated SVGs, without touching KDE.
+"""Render README preview images from the generated theme, without touching KDE.
 
 Needs PySide6 (`sudo dnf install python3-pyside6`) and, for the title font,
 ChicagoFLF installed. Run generate.py first.
 
     python3 generate.py && python3 tools/render_previews.py
 
-The window layout mimics Aurorae v2 with the default "Normal" border size.
+Windows are drawn with the same geometry as src/decoration/main.qml (the QML
+engine); the boxes come from the generated button SVGs, which are identical.
 """
 import os
 import sys
@@ -29,59 +30,54 @@ class Deco:
         self.s = scale
         name = "OS7Pinstripe" if scale == 1 else f"OS7Pinstripe-{scale}x"
         d = BUILD / "aurorae" / name
-        self.frame = QSvgRenderer(str(d / "decoration.svg"))
         self.btn = {k: QSvgRenderer(str(d / f"{k}.svg")) for k in ("close", "maximize", "minimize")}
 
-    def piece(self, painter, prefix, name, rect):
-        self.frame.render(painter, f"{prefix}-{name}", rect)
-
     def draw(self, painter, x, y, cw, ch, title, active=True, pressed_close=False):
-        """Draw a window whose client area is cw x ch at (x, y); return outer rect."""
-        s = self.s
-        # Aurorae v2 clamps side borders to the "Normal" border size range (4-6 px)
-        bl, br, bb = (min(max(v, 4), 6) for v in (1 * s, 2 * s, 2 * s))
-        bt = 19 * s
+        """Draw a window whose client area is cw x ch at (x, y), like main.qml."""
+        u = self.s
+        black, white = QColor(0, 0, 0), QColor(255, 255, 255)
+        bl, br, bb, bt = u, 2 * u, 2 * u, 19 * u
         w, h = cw + bl + br, ch + bt + bb
-        prefix = "decoration" if active else "decoration-inactive"
-        el = lambda n: self.frame.boundsOnElement(f"{prefix}-{n}")
-        L, R = el("left").width(), el("right").width()
-        T, Bo = el("top").height(), el("bottom").height()
-        # nine-slice frame (stretched pieces), the center covers the whole inside
-        self.piece(painter, prefix, "center", QRectF(x + L, y + T, w - L - R, h - T - Bo))
-        self.piece(painter, prefix, "topleft", QRectF(x, y, L, T))
-        self.piece(painter, prefix, "top", QRectF(x + L, y, w - L - R, T))
-        self.piece(painter, prefix, "topright", QRectF(x + w - R, y, R, T))
-        self.piece(painter, prefix, "left", QRectF(x, y + T, L, h - T - Bo))
-        self.piece(painter, prefix, "right", QRectF(x + w - R, y + T, R, h - T - Bo))
-        self.piece(painter, prefix, "bottomleft", QRectF(x, y + h - Bo, L, Bo))
-        self.piece(painter, prefix, "bottom", QRectF(x + L, y + h - Bo, w - L - R, Bo))
-        self.piece(painter, prefix, "bottomright", QRectF(x + w - R, y + h - Bo, R, Bo))
-        # buttons
-        bs, by = 13 * s, y + 3 * s
-        state = "active" if active else "inactive"
-        close_state = "pressed" if (active and pressed_close) else state
-        left_end = x + 7 * s + bs
-        self.btn["close"].render(painter, f"{close_state}-center", QRectF(x + 7 * s, by, bs, bs))
-        rx = x + w - 7 * s - bs
-        self.btn["minimize"].render(painter, f"{state}-center", QRectF(rx, by, bs, bs))
-        rx -= 3 * s + bs
-        self.btn["maximize"].render(painter, f"{state}-center", QRectF(rx, by, bs, bs))
-        # centered caption
+        fw, fh = w - u, h - u                      # frame without the drop shadow
+        painter.fillRect(QRectF(x + u, y + u, w - u, h - u), black)      # shadow
+        painter.fillRect(QRectF(x, y, fw, fh), black)                     # outline
+        painter.fillRect(QRectF(x + u, y + u, fw - 2 * u, fh - 2 * u), white)
+        painter.fillRect(QRectF(x, y + bt - u, fw, u), black)            # separator
+        tx, ty, tw, th = x, y + u, fw, 17 * u                             # title bar
+        if active:
+            for i in range(6):
+                painter.fillRect(QRectF(tx + 2 * u, ty + (3 + 2 * i) * u, tw - 4 * u, u), black)
+        # boxes: close on the left; zoom + collapse on the right
+        bs, by = 13 * u, ty + 2 * u
+        lx = tx + 7 * u
+        right_w = 2 * bs + 3 * u
+        rx = tx + tw - 6 * u - right_w
+        if active:
+            self.btn["close"].render(painter, "pressed-center" if pressed_close else "active-center",
+                                     QRectF(lx, by, bs, bs))
+            self.btn["maximize"].render(painter, "active-center", QRectF(rx, by, bs, bs))
+            self.btn["minimize"].render(painter, "active-center", QRectF(rx + bs + 3 * u, by, bs, bs))
+        # caption: centered, kept clear of the boxes, on a plate as wide as the text
         font = QFont("ChicagoFLF")
-        font.setPixelSize(round(FONT_PT[s] * 96 / 72))
+        font.setPixelSize(round(FONT_PT[u] * 96 / 72))
+        fm = QFontMetrics(font)
+        left_limit, right_limit = lx + bs + 8 * u, rx - 8 * u
+        avail = max(0, right_limit - left_limit)
+        text = fm.elidedText(title, Qt.ElideMiddle, int(avail))
+        text_w = min(fm.horizontalAdvance(text), avail)
+        cx = round(max(left_limit, min(right_limit - text_w, tx + (tw - text_w) / 2)))
+        if active:
+            painter.fillRect(QRectF(cx - 6 * u, ty, text_w + 12 * u, th), white)
         painter.setFont(font)
-        painter.setPen(QColor(0, 0, 0) if active else QColor(128, 128, 128))
-        cap = QRectF(left_end + 6 * s, y + s, rx - left_end - 12 * s, 17 * s)
-        text = QFontMetrics(font).elidedText(title, Qt.ElideMiddle, int(cap.width()))
-        painter.drawText(cap, Qt.AlignCenter, text)
+        painter.setPen(black if active else QColor(128, 128, 128))
+        painter.drawText(QRectF(cx, ty, text_w, th), Qt.AlignLeft | Qt.AlignVCenter, text)
         # a little client content
         body = QFont("Noto Sans")
-        body.setPixelSize(13 * s)
+        body.setPixelSize(13 * u)
         painter.setFont(body)
-        painter.setPen(QColor(0, 0, 0))
-        painter.drawText(QRectF(x + bl + 10 * s, y + bt + 8 * s, cw - 20 * s, ch - 16 * s),
-                         Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
-                         "The quick brown fox.")
+        painter.setPen(black)
+        painter.drawText(QRectF(x + bl + 10 * u, y + bt + 8 * u, cw - 20 * u, ch - 16 * u),
+                         Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap, "The quick brown fox.")
         return QRectF(x, y, w, h)
 
 
@@ -146,6 +142,19 @@ def buttons_image():
     img.save(str(OUT / "buttons.png"))
 
 
+def long_title_image():
+    """The same long title in a wide and in a narrow window (scale 2)."""
+    d = Deco(2)
+    img = QImage(1000, 260, QImage.Format_RGB32)
+    p = QPainter(img)
+    wallpaper(p, QRectF(0, 0, 1000, 260))
+    title = "user@host:~/projects/os7-pinstripe — a rather long window title"
+    d.draw(p, 30, 20, 930, 60, title)
+    d.draw(p, 30, 140, 420, 60, title)
+    p.end()
+    img.save(str(OUT / "long-title.png"))
+
+
 def titlebar_zoom_image():
     """A 1x title bar magnified 4x, to show the pixel pattern."""
     s, z = 1, 4
@@ -167,4 +176,5 @@ if __name__ == "__main__":
     scales_image()
     buttons_image()
     titlebar_zoom_image()
+    long_title_image()
     print(f"Previews written to {OUT}")
